@@ -1,0 +1,5 @@
+results
+*.svg
+tests/
+.idea
+stats.txt
