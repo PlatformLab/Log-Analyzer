@@ -1,5 +1,5 @@
 # Log Analyzer
-This repository contains a series of scripts to search for all log messages in Spark, memcached, and RAMCloud and count the number of static characters in their log messages vs. the number of dynamic ones.
+This repository contains a series of scripts to search for all log messages in Spark, memcached, and RAMCloud and count the number of static characters in their log messages vs. the number of dynamic ones. These scripts should be considered "best effort" since they use a collection of heuristics to find log messages and do not compile the sources (and hence some log messages can be missed if they are re-defined or use a dynamic log string).
 
 ## Spark
 Spark has 5 log functions:
@@ -59,3 +59,27 @@ When we collected the dynamic argument type statistics, we were surprised that, 
 Luckily, the RAMCloud team had a convention with naming serverId variables with id's and nearly all of the usage cases can be caught by the simple regex "id.*\.toString\(\)\.c_str\(\)". There are a few cases such as in FailureDetector::168 where the ServerId is named "pingee", but a majority are caught. And checking as best as I can, it appears all the results are valid.
 
 As a sanity check, NetBeans 8.2's "Find Usage" feature reports 171 usages of ServerId::toString as of RAMCloud commit 1c9072961b197d9ad8d52510b9e963fe65906744 and our script detects 144 in LOG, 4 in DIE, 2 in CLOG, 2 in RAMCLOUD_DIE, 5 in RAMCLOU_DLOG, 1 in TEST_LOG, making a total of 158; pretty close, only 7% off.
+
+## Apache Httpd
+There are 4 log statements that we target in Apache Httpd
+ - ap_log_error(...)
+ - ap_log_rerror(...)
+ - ap_log_cerror(...)
+ - ap_log_perror(...)
+
+These functions are the recommened logging functions for Apache. Some modules do other sorts of logging (i.e printf, fprintf, apr_log...), but sampling the message, they appear to be either communicating to a remote http client or used in utility applications. Thus these functions are not counted.
+
+Additionally, some of the format strings start with "APLOGNO(12345)" which is a macro that expands to "AH12345: " and have been replaced as such in the processed log messages.
+
+### Caveats
+The format string is officially the 5th argument for each of the functions above and the scripts match on that string. Apache does provide conveniene macros to fill in the first 4 arguments, but very few logs appear to use this convenience macro so these cases are not counted.
+
+## Linux Kernel
+The Linux Kernel contains many logging facilities; luckily, most of them are macros that eventually expand to ```printk```. So to support this expansion, the linux sources must first be preprocessed with ```gcc -E -Ilinux/include``` and then processed.
+
+However, this introduces the issue of duplicating printk's in headers that are included in multiple source files. Thus, the linuxParser.py reverts to using the preprocessor's filename/linenumber directives to dedup log messages.
+
+The log statements we search for are
+ - printk(...)
+ - dev_printk(?, ?, ...)
+ - WARN_ONCE(?, ....)

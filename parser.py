@@ -14,37 +14,17 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-"""NanoLog Preprocessor
-Spark Parser
 
-Usage:
-    parser.py [-h] LOG_FN ROOT_DIR
+# This file provides support to parse through Java/C/C++ and GNU Preprocessed
+# source files and identify when a log function is potentially invoked.
 
-Options:
-  -h --help             Show this help messages
 
-  LOG_FN                Log function to search for in the Java/Scala sources
-
-  ROOT_DIR              Root directory of sources to scan for *scala and *java
-                        source files and parse their LOG_FN's
-"""
-
-from docopt import docopt
 from collections import namedtuple
-import sys
-import os
 import re
 
 ####
 # Below are configuration parameters to be toggled by the library implementer
 ####
-
-# A special C++ line at the end of NanoLog.h that marks where the parser
-# can start injecting inline function definitions. The key to it being at the
-# end of NanoLog.h is that it ensures all required #includes have been
-# included by this point in the file.
-INJECTION_MARKER = \
-    "static const int __internal_dummy_variable_marker_for_code_injection = 0;"
 
 # Since header files are in-lined after the GNU preprocessing step, library
 # files can be unintentionally processed. This list is a set of files that
@@ -96,8 +76,7 @@ def extractCString(source):
 
   return returnString
 
-
-def extractBasicFmtString(source):
+def extractStaticPortionInQuotes(source):
   returnString = ""
   isInQuotes = False
   prevWasEscape = False
@@ -109,8 +88,9 @@ def extractBasicFmtString(source):
       elif isInQuotes:
         returnString += c
         prevWasEscape = c == "\\"
-      elif c == '.' or c == ')':
-        break
+
+  if isInQuotes:
+    return None
 
   return returnString
 
@@ -227,8 +207,7 @@ def parseLogStatement(lines, startPosition, log_function):
     startPos = FilePosition(lineNum, offset)
     arg = parseArgumentStartingAt(lines, startPos)
     if not arg:
-      raise ValueError("Cannot find end of NANO_LOG invocation",
-                       lines[startPosition[0]:startPosition[0]+5])
+      raise ValueError("Cannot find end of LOG invocation")
     args.append(arg)
     lineNum, offset = arg.endPos
 
@@ -291,148 +270,38 @@ def peekNextMeaningfulChar(lines, filePos):
 
   return None
 
-# Separate a log statement into its constituent parts joined by +
-def separateLogFragments(line):
-  # The algorithm uses the heuristic of assuming that the argument ends
-  # when it finds a terminating character (either a + or right parenthesis)
-  # in a position where the relative parenthesis/curly braces/bracket depth is 0
-  # The latter constraint prevents false positives where function calls are used
-  # to generate the parameter (i.e. log("number is %d", calculate(a, b)))
-  parenDepth = 0
-  curlyDepth = 0
-  bracketDepth = 0
-  inQuotes = False
-  argSrcStr = ""
 
-
-  prevWasEscape = False
-  fragments = []
-  for i in range(len(line)):
-    c = line[i]
-    argSrcStr = argSrcStr + c
-
-    # If it's an escape, we don't care what comes after it
-    if c == "\\" or prevWasEscape:
-      prevWasEscape = not prevWasEscape
-      continue
-
-    # Start counting depths
-    if c == "\"":
-      inQuotes = not inQuotes
-
-    # Don't count curlies and parenthesis when in quotes
-    if inQuotes:
-      continue
-
-    if c == "{":
-      curlyDepth = curlyDepth + 1
-    elif c == "}":
-      curlyDepth = curlyDepth - 1
-    elif c == "(":
-      parenDepth = parenDepth + 1
-    elif c == ")" and parenDepth > 0:
-      parenDepth = parenDepth - 1
-    elif c == "[":
-      bracketDepth = bracketDepth + 1
-    elif c == "]":
-      bracketDepth = bracketDepth - 1
-    elif (c == "+" or c == ")") and curlyDepth == 0 \
-            and parenDepth == 0 and bracketDepth == 0:
-      # found it
-      fragments.append(argSrcStr[:-1].strip())
-      argSrcStr = ""
-
-  argSrcStr = argSrcStr.strip()
-  if len(argSrcStr) > 0:
-    fragments.append(argSrcStr)
-
-  return fragments
-
-def processScalaLog(line):
-  totalStaticChars = 0
-  totalDynaVars = 0
-
-  completeLog = ""
-  fmtOutput = "\t#%-4d %-4d %-15s %s" # static chars, dynaArgs, type, fragment
-
-  inlineVarRegex = r'\$(\{[^\}]+}|[a-zA-Z0-9]+)'
-  formatSpecifierRegex = "%" \
-             "(?P<flags>[-+ #0]+)?" \
-             "(?P<width>[\\d]+|\\*)?" \
-             "(\\.(?P<precision>\\d+|\\*))?" \
-             "(?P<length>hh|h|l|ll|j|z|Z|t|L)?" \
-             "(?P<specifier>[diuoxXfFeEgGaAcspn])"
-
-
-  for fragment in separateLogFragments(line):
-    isSubstitution = fragment[0] == 's'
-
-    # Handle the triple quote case since it's the easiest.
-    if fragment.startswith("s\"\"\"") \
-            or fragment.startswith("\"\"\"") \
-            or fragment.startswith("(\"\"\""):
-
-      # This is currently an unhandled case, so we just error
-      assert(fragment[0] != '(')
-
-      # Rip out the googy center of the triple quotes """
-      assert(len(re.findall("\"\"\"", fragment)) == 2)
-      begin = fragment.index("\"\"\"") + 3
-      end = fragment.index("\"\"\"", begin)
-      fragment = fragment[begin:end].replace("\n", "")
-
-      # Count the types
-      if(isSubstitution):
-        numDynaVars = len(re.findall(inlineVarRegex, fragment))
-        numStaticChars = len(re.sub(inlineVarRegex, '', fragment))
-      else:
-        numDynaVars = len(re.findall(formatSpecifierRegex, fragment))
-        numStaticChars = len(re.sub(formatSpecifierRegex, '', fragment))
-
-    # Detect substitions (i.e. s"Hello $user")
-    elif isSubstitution:
-      fragment = fragment[2:-1] # remove the s""
-      numDynaVars = len(re.findall(inlineVarRegex, fragment))
-      numStaticChars = len(re.sub(inlineVarRegex, '', fragment))
-      # print fmtOutput % (numStaticChars, numDynaVars, "Substitution", fragment)
-
-    # Detect "strings" or "Format".format(..) or ("" + "".format())
-    elif fragment[0] == '\"' or fragment[0] == '(':
-      fragment = extractBasicFmtString(fragment)
-      numDynaVars = len(re.findall(formatSpecifierRegex, fragment))
-      numStaticChars = len(re.sub(formatSpecifierRegex, '', fragment))
-      # print fmtOutput % (numStaticChars, numDynaVars, "Format", fragment)
-
-    # They are just variables, i.e. logInfo(variable)
-    else:
-      numDynaVars = 1
-      numStaticChars = 0
-      fragment = "v:{" + fragment.replace("\n", "") + "}"
-      # print fmtOutput %(numStaticChars, numDynaVars, "Variable", fragment)
-
-    completeLog += fragment
-    totalStaticChars += numStaticChars
-    totalDynaVars += numDynaVars
-
-  print "%-4d %-4d %-4d %-4d %-4d %-4d %s" % (totalStaticChars, totalDynaVars,
-                                              0,0,0,0,
-                                              completeLog)
-
-# Given a C/C++ source file that have been preprocessed by the GNU
-# preprocessor with the -E option, identify all the NanoLog log statements
-# and inject code in place of the statements to interface with the NanoLog
-# runtime system. The processed files will be outputted as <filename>i
-# (ex: test.i -> test.ii)
+# Given a source file, use various heuristics to attempt to identify all
+# log_function statements and pass them on to processLogStatementFn.
 #
-# \param functionGenerator
-#           FunctionGenerator used to generate interface code
-#           and maintain mappings
+# The processLogStatementFn is expected to accept a LogStatement namedtuple
+# (lie: look at parseLogStatement() for return type) and an format_index.
+# It is then up to processLogStatementFn to further extract the types.
 #
-# \param inputFiles
-#           list of g++ preprocessed C/C++ files to analyze
+# processLogStatementFn is expected to return a string identifying the
+# number of static characters, dynamic arguments, integer arguments, floats,
+# strings, others, and original format string in that order, separated by spaces
+# If an error occurs, return None.
 #
-def processFile(inputFile, log_function):
+# \param inputFile
+#       Source file to process
+# \param log_function
+#       Log function to search for in the sources
+# \param format_index
+#       Index of the format string
+# \param processLogStatementFn
+#       Function to pass the log function to
+# \param logLocationsEncountered
+#       Dictionary used to store when a particular file:line combination has
+#       been encountered before. This is typically ONLY used for preprocessed
+#       C/C++ files to help dedup #include-ed log statements.
+def processFile(inputFile,
+                log_function,
+                format_index,
+                processLogStatementFn,
+                logLocationsEncountered=None):
   logStatementsFound = 0
+  directiveRegex = re.compile("^# (\d+) \"(.*)\"(.*)")
 
   with open(inputFile) as f:
     try:
@@ -468,7 +337,7 @@ def processFile(inputFile, log_function):
 
         # Parse special preprocessor directives that follows the format
         # '# lineNumber "filename" flags'
-        directive = re.match("^# (\d+) \"(.*)\"(.*)", line)
+        directive = directiveRegex.match(line)
         if directive:
             # -1 since the line num describes the line after it, not the
             # current one, so we decrement it here before looping
@@ -479,10 +348,6 @@ def processFile(inputFile, log_function):
                 firstFilename = ppFileName
 
             flags = directive.group(3).strip()
-            continue
-
-        if INJECTION_MARKER in line:
-            inlineCodeInjectionLineIndex = lineIndex
             continue
 
         if ppFileName in ignored_files:
@@ -496,6 +361,10 @@ def processFile(inputFile, log_function):
         prevWasEscape = False
         inQuotes = False
         charOffset = -1
+
+        # Fast fail, use python to search if our log function is in the string
+        if not log_function in line:
+          continue
 
         while charOffset < len(line) - 1:
           charOffset = charOffset + 1
@@ -526,7 +395,6 @@ def processFile(inputFile, log_function):
             if not found:
               continue
 
-
             # Valid identifier characters are [a-zA-Z_][a-zA-Z0-9_]*
             if lastChar.isalnum() or lastChar == '_':
               continue
@@ -540,29 +408,35 @@ def processFile(inputFile, log_function):
             # Okay at this point we are pretty sure we have a genuine
             # log statement, parse it and start modifying the code!
             logStatement = parseLogStatement(lines, (lineIndex, charOffset), log_function)
+            lastLogStatementLine = logStatement['semiColonPos'].lineNum
 
-            logStatementsFound += 1
-            processScalaLog(logStatement['arguments'][0].source)
+            if len(logStatement['arguments']) < format_index + 1:
+              raise ValueError("LOG statement expects at least %d arguments"
+                                 ": a LogLevel and a literal format string",
+                                 format_index + 1,
+                                 lines[lineIndex:lastLogStatementLine + 1])
+
+            logLocation = "%s:%d" % (inputFile, lineIndex)
+            encounteredBefore = False
+            # If the user passed in a dictionary, that means we're looking
+            # at preprocessed source and we should dedup log message based on
+            # filename and line location markers
+            if logLocationsEncountered is not None:
+              logLocation = "%s:%d" % (ppFileName, ppLineNum)
+              encounteredBefore = logLocationsEncountered.has_key(logLocation)
+              if not encounteredBefore:
+                logLocationsEncountered[logLocation] = 0
+              logLocationsEncountered[logLocation] += 1
+
+            if not encounteredBefore:
+              logStatementsFound += 1
+
+              # print "# In %s" % logLocation
+              print processLogStatementFn(logStatement, format_index)
 
           lastChar = c
     except ValueError as e:
-        print "\r\n%s:%d: Error - %s\r\n\r\n%s\r\n" % (
-            ppFileName, ppLineNum, e.args[0], "".join(e.args[1]))
-        sys.exit(1)
+        print "# %s:%d: Error - %s\r\n" % (inputFile, lineIndex, e.args[0])
 
-    if logStatementsFound > 0:
-      print "# %d logs found for %s in %s" % (logStatementsFound, log_function, inputFile)
-
-if __name__ == "__main__":
-  arguments = docopt(__doc__, version='Scala/Java Preprocesor v0.1')
-
-  sourceFiles = []
-  for dirpath, dirs, files in os.walk(arguments['ROOT_DIR']):
-    for file in files:
-      if file.endswith("scala") or file.endswith("java"):
-        sourceFiles.append(os.path.join(dirpath, file))
-
-  print "# Static Dynamic Ints Floats String Special Format"
-  print "# Note Int/FLoats/String/Special are always 0"
-  for sourceFile in sourceFiles:
-    processFile(sourceFile, arguments["LOG_FN"])
+    # if logStatementsFound > 0:
+    #   print "# %d logs found for %s in %s" % (logStatementsFound, log_function, inputFile)
