@@ -91,9 +91,13 @@ cat results/apache_ap_log_perror.txt >> results/apache.txt
 ./genDist2.py results/apache.txt  results/apache-pdf.txt   >> stats.txt
 
 ## Linux
-python logParserForC.py --preprocessed printk 0 ${LINUX_PP_REPO} > results/linux_printk.txt
-python logParserForC.py --preprocessed dev_printk 2 ${LINUX_PP_REPO} > results/linux_dev_printk.txt
-python logParserForC.py --preprocessed WARN_ONCE 1 ${LINUX_PP_REPO} > results/linux_warn_once.txt
+echo "Starting linux jobs... This could take a while..."
+python logParserForC.py printk 0 ${LINUX_PP_REPO} > results/linux_printk.txt &
+python logParserForC.py dev_printk 2 ${LINUX_PP_REPO} > results/linux_dev_printk.txt &
+python logParserForC.py WARN_ONCE 1 ${LINUX_PP_REPO} > results/linux_warn_once.txt &
+
+wait
+echo "Linux parsing done!"
 
 ./genDist2.py results/linux_printk.txt results/linux_printk-pdf.txt >> stats.txt
 ./genDist2.py results/linux_dev_printk.txt results/linux_dev_printk-pdf.txt >> stats.txt

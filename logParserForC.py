@@ -27,7 +27,10 @@ Options:
                         ServerId::toString().c_str() invocations with "%u.%u"
                         formatting instead.
 
-  --preprocessed        Indicates that the sources were preprocessed by GNU
+  --preprocessed        Indicates that the sources were preprocessed by GNU and
+                        applies a stricter set of rules to the format string.
+                        Without it, the parser will happily ignore unexpanded
+                        macros and extraneous characters in the format string.
 
   --apacheApLogNoFix    If enabled, attempts to replace all Apache's statically
                         defined log markers (i.e. APLOGNO(0001)) to be apart of

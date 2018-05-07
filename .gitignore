@@ -3,3 +3,5 @@ results
 tests/
 .idea
 stats.txt
+*.tex
+*.pyc

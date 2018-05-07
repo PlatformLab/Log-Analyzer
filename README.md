@@ -83,3 +83,6 @@ The log statements we search for are
  - printk(...)
  - dev_printk(?, ?, ...)
  - WARN_ONCE(?, ....)
+
+### Caveats
+It's worth noting that a popular macro (KBUILD_MODNAME) was left unexpanded in our analysis. It appears in about 20k logs, which means it would have a pretty big impact on the mean if we knew the value.
