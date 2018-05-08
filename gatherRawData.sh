@@ -51,8 +51,14 @@ python logParserForC.py --apacheApLogNoFix ap_log_perror 4 $APACHE_REPO > result
 ## Linux
 echo "Starting linux jobs... This could take a while..."
 python logParserForC.py --preprocessed printk 0 ${LINUX_PP_REPO} > results/linux_printk.txt &
+P1=$!
 python logParserForC.py --preprocessed dev_printk 2 ${LINUX_PP_REPO} > results/linux_dev_printk.txt &
+P2=$!
 python logParserForC.py --preprocessed WARN_ONCE 1 ${LINUX_PP_REPO} > results/linux_warn_once.txt &
+P3=$!
+
+# Insert a trap to stop the linux processors
+trap 'kill $P1 $P2 $P3; exit' SIGINT
 
 wait
 echo "Linux parsing done!"
