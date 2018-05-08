@@ -78,7 +78,7 @@ plot  'results/ramcloud_ramcloud_log-pdf.txt'      using 1:3 with lines lw 4 tit
 
 
 set title "Static Characters vs. Number of Dynamic Variables"
-set output "StaticVDynamic.svg"
+set output "graphs/StaticVDynamic.svg"
 
 set xrange [0:10]
 plot 'graphable_stats.txt' using 2:4 index 0 title "Linux", \
@@ -89,7 +89,7 @@ plot 'graphable_stats.txt' using 2:4 index 0 title "Linux", \
 
 
 set title "Average Static Characters vs. Number of Dynamic Variables"
-set output "cluster.svg"
+set output "graphs/cluster.svg"
 set style data histogram
 set style histogram cluster gap 1
 

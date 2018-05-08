@@ -2,6 +2,7 @@ results
 *.svg
 tests/
 .idea
-stats.txt
+*.txt
 *.tex
 *.pyc
+SOURCE_DIRECTORY

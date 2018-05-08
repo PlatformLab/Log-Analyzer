@@ -18,7 +18,9 @@
 C/C++ Parser
 
 Usage:
-    parser.py [-h] [ --preprocessed ] [ --serverIdFix ] [ --apacheApLogNoFix ] LOG_FN FMT_INDEX ROOT_DIR
+    parser.py [-h]  [ --strictFmt ] [ --preprocessed ]
+                    [ --serverIdFix ] [ --apacheApLogNoFix ]
+                    LOG_FN FMT_INDEX ROOT_DIR
 
 Options:
   -h --help             Show this help messages
@@ -27,15 +29,18 @@ Options:
                         ServerId::toString().c_str() invocations with "%u.%u"
                         formatting instead.
 
-  --preprocessed        Indicates that the sources were preprocessed by GNU and
-                        applies a stricter set of rules to the format string.
+  --strictFmt           Applies a stricter set of rules to the format string.
                         Without it, the parser will happily ignore unexpanded
                         macros and extraneous characters in the format string.
+
+  --preprocessed        Indicates that the sources have been preprocessed by
+                        the GNU Preprocessor and thus log messages should be
+                        de-duplicated according to origin filename and line
+                        number.
 
   --apacheApLogNoFix    If enabled, attempts to replace all Apache's statically
                         defined log markers (i.e. APLOGNO(0001)) to be apart of
                         the static strings
-
 
   LOG_FN                Log function to search for in the Java/Scala sources
 
@@ -56,7 +61,7 @@ import re, os
 
 
 
-def processCLog(serverIdReplacement, apacheLogNoFix, preprocessed, logStatement, format_index):
+def processCLog(serverIdReplacement, apacheLogNoFix, strictFmt, logStatement, format_index):
   fmtArg = logStatement['arguments'][format_index].source
 
   if apacheLogNoFix:
@@ -66,7 +71,7 @@ def processCLog(serverIdReplacement, apacheLogNoFix, preprocessed, logStatement,
   # but it will pretty much catch all cases.
   fmtArg = re.sub("\" PRIu64 \"", "d", fmtArg)
 
-  if preprocessed:
+  if strictFmt:
     fmtString = extractCString(fmtArg)
   else:
     fmtString = extractStaticPortionInQuotes(fmtArg)
@@ -134,10 +139,10 @@ if __name__ == "__main__":
 
   replaceServerIds = True if arguments["--serverIdFix"] else False
   apacheLogNoFix = True if arguments["--apacheApLogNoFix"] else False
-  preprocessed = True if arguments["--preprocessed"] else False
-  previouslyEncountered = {} if preprocessed else None
+  strictFmt = True if arguments["--strictFmt"] else False
+  previouslyEncountered = {} if arguments["--preprocessed"] else None
 
-  parseLogFn = partial(processCLog, replaceServerIds, apacheLogNoFix, preprocessed)
+  parseLogFn = partial(processCLog, replaceServerIds, apacheLogNoFix, strictFmt)
   print "# Static Dynamic Ints Floats String Special Filename:line: Format"
   for sourceFile in sourceFiles:
     processFile(sourceFile,

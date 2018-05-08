@@ -1,11 +1,17 @@
 #! /bin/bash
 
+if [ -f SOURCE_DIRECTORY ]; then
+  ROOT_SRC_DIR="$(cat SOURCE_DIRECTORY)"
+else
+  ROOT_SRC_DIR="./"
+fi
+
 mkdir results 2> /dev/null
-SPARK_REPO="/Users/syang0/Desktop/staging/LogAnalysis/spark"
-MEMCACHED_REPO="/Users/syang0/Desktop/staging/LogAnalysis/memcached/"
-RAMCLOUD_REPO="/Users/syang0/Desktop/staging/LogAnalysis/RAMCloud/"
-APACHE_REPO="/Users/syang0/Desktop/staging/LogAnalysis/httpd"
-LINUX_PP_REPO="/Users/syang0/Desktop/staging/LogAnalysis/linux-preprocessed"
+SPARK_REPO="${ROOT_SRC_DIR}/spark"
+MEMCACHED_REPO="${ROOT_SRC_DIR}/memcached/"
+RAMCLOUD_REPO="${ROOT_SRC_DIR}/RAMCloud/"
+APACHE_REPO="${ROOT_SRC_DIR}/httpd"
+LINUX_PP_REPO="${ROOT_SRC_DIR}/linux-preprocessed"
 
 SPARK_LOG_FNS="logTrace logDebug logInfo logWarning logError"
 
@@ -44,9 +50,9 @@ python logParserForC.py --apacheApLogNoFix ap_log_perror 4 $APACHE_REPO > result
 
 ## Linux
 echo "Starting linux jobs... This could take a while..."
-python logParserForC.py printk 0 ${LINUX_PP_REPO} > results/linux_printk.txt &
-python logParserForC.py dev_printk 2 ${LINUX_PP_REPO} > results/linux_dev_printk.txt &
-python logParserForC.py WARN_ONCE 1 ${LINUX_PP_REPO} > results/linux_warn_once.txt &
+python logParserForC.py --preprocessed printk 0 ${LINUX_PP_REPO} > results/linux_printk.txt &
+python logParserForC.py --preprocessed dev_printk 2 ${LINUX_PP_REPO} > results/linux_dev_printk.txt &
+python logParserForC.py --preprocessed WARN_ONCE 1 ${LINUX_PP_REPO} > results/linux_warn_once.txt &
 
 wait
 echo "Linux parsing done!"
